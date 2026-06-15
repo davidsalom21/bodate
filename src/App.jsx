@@ -47,8 +47,7 @@ const SEED={
 
 // UI base
 function Eyebrow({children}){return <div style={{fontFamily:BODY,fontSize:11,letterSpacing:".18em",textTransform:"uppercase",color:C.sage,fontWeight:600}}>{children}</div>;}
-function Card({children,style}){return <div style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:16,...style}}>{children}</div>;}
-function Btn({children,onClick,kind="primary",style}){
+function Card({children,style,...props}){return <div style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:16,...style}} {...props}>{children}</div>;}function Btn({children,onClick,kind="primary",style}){
   const base={fontFamily:BODY,fontWeight:600,borderRadius:999,cursor:"pointer",border:"1px solid transparent",display:"inline-flex",alignItems:"center",gap:6,transition:"all .15s",padding:"9px 16px",fontSize:14};
   const kinds={primary:{background:C.forest,color:"#fff"},soft:{background:C.sageSoft,color:C.forest},ghost:{background:"transparent",color:C.sub,border:`1px solid ${C.line}`},danger:{background:"transparent",color:C.no,border:`1px solid ${C.noBg}`}};
   return <button onClick={onClick} style={{...base,...kinds[kind],...style}}>{children}</button>;
