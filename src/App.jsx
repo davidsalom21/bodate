@@ -5,8 +5,12 @@ import {
   Truck, Receipt, Clock, Music, Gift, MoreHorizontal, Phone, Mail,
   ChevronRight, Copy, LogOut, Link2
 } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import * as XLSX from "xlsx";
 import { supabase } from "./supabase.js";
+
+const TIPOS=["Adulto","Cadete","Infantil"];
 
 const C={paper:"#F3F0E7",surface:"#FFFFFF",ink:"#2A2D24",sub:"#6C7060",sage:"#7E8A66",sageSoft:"#E7EADD",forest:"#3B4733",line:"#E4DFD2",gold:"#B08D57",blush:"#C2998F",ok:"#5F7E47",okBg:"#E6EEDB",no:"#B0644D",noBg:"#F3E1DA",pend:"#A98C4B",pendBg:"#F2EAD3"};
 const DISPLAY="'Cormorant Garamond',Georgia,'Times New Roman',serif";
@@ -47,7 +51,8 @@ const SEED={
 
 // UI base
 function Eyebrow({children}){return <div style={{fontFamily:BODY,fontSize:11,letterSpacing:".18em",textTransform:"uppercase",color:C.sage,fontWeight:600}}>{children}</div>;}
-function Card({children,style,...props}){return <div style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:16,...style}} {...props}>{children}</div>;}function Btn({children,onClick,kind="primary",style}){
+function Card({children,style,...props}){return <div {...props} style={{background:C.surface,border:`1px solid ${C.line}`,borderRadius:16,...style}}>{children}</div>;}
+function Btn({children,onClick,kind="primary",style}){
   const base={fontFamily:BODY,fontWeight:600,borderRadius:999,cursor:"pointer",border:"1px solid transparent",display:"inline-flex",alignItems:"center",gap:6,transition:"all .15s",padding:"9px 16px",fontSize:14};
   const kinds={primary:{background:C.forest,color:"#fff"},soft:{background:C.sageSoft,color:C.forest},ghost:{background:"transparent",color:C.sub,border:`1px solid ${C.line}`},danger:{background:"transparent",color:C.no,border:`1px solid ${C.noBg}`}};
   return <button onClick={onClick} style={{...base,...kinds[kind],...style}}>{children}</button>;
@@ -295,25 +300,60 @@ function MN({label,value,onChange}){return <div><div style={{fontSize:11,color:C
 
 // Invitados
 function Invitados({data,up}){
-  const [q,setQ]=useState("");const [f,setF]=useState("todos");const [ed,setEd]=useState(null);const [bulk,setBulk]=useState(false);const [bt,setBt]=useState("");
-  const blank={id:"",nombre:"",lado:"Ambos",grupo:"Amigos",estado:"pendiente",mesa:"",comida:"Carne",restriccion:"Ninguna",notas:""};
+  const [q,setQ]=useState("");const [f,setF]=useState("todos");const [ed,setEd]=useState(null);const [bulk,setBulk]=useState(false);const [bt,setBt]=useState("");const [imp,setImp]=useState(null);
+  const fileRef=useRef(null);
+  const blank={id:"",nombre:"",lado:"Ambos",grupo:"Amigos",estado:"pendiente",mesa:"",comida:"Carne",restriccion:"Ninguna",tipo:"",notas:""};
   const cnt={total:data.guests.length,confirmado:data.guests.filter(g=>g.estado==="confirmado").length,pendiente:data.guests.filter(g=>g.estado==="pendiente").length,rechazado:data.guests.filter(g=>g.estado==="rechazado").length};
+  const tc={Adulto:0,Cadete:0,Infantil:0};data.guests.forEach(g=>{if(g.tipo&&tc[g.tipo]!=null)tc[g.tipo]++;});
+  const hayTipos=tc.Adulto+tc.Cadete+tc.Infantil>0;
   const list=data.guests.filter(g=>(f==="todos"||g.estado===f)&&g.nombre.toLowerCase().includes(q.toLowerCase()));
   const save=(g)=>{if(!g.nombre.trim())return;if(g.id)up({guests:data.guests.map(x=>x.id===g.id?g:x)});else up({guests:[...data.guests,{...g,id:uid()}]});setEd(null);};
   const del=(id)=>up({guests:data.guests.filter(g=>g.id!==id)});
   const cycle=(g)=>{const o=["confirmado","pendiente","rechazado"];up({guests:data.guests.map(x=>x.id===g.id?{...x,estado:o[(o.indexOf(g.estado)+1)%3]}:x)});};
   const addBulk=()=>{const n=bt.split("\n").map(s=>s.trim()).filter(Boolean).map(nombre=>({...blank,id:uid(),nombre}));if(n.length)up({guests:[...data.guests,...n]});setBt("");setBulk(false);};
+  const mapMenu=(s)=>{const t=s.toLowerCase();if(t.startsWith("adult"))return"Adulto";if(t.startsWith("cadet"))return"Cadete";if(t.startsWith("xiquet")||t.startsWith("infant")||t.startsWith("niñ")||t.startsWith("nin")||t.startsWith("ticket"))return"Infantil";return"";};
+  const SKIP=["nombre","nom","invitado","invitados","convidat","convidats","menú","menu","tipo","numero","número","núm","nº","n"];
+  const importExcel=async(e)=>{
+    const file=e.target.files&&e.target.files[0];if(!file){return;}
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false});
+      const nuevos=[];
+      rows.forEach(r=>{
+        let nombre="",tipo="",numero="";
+        (r||[]).forEach(cell=>{const s=String(cell==null?"":cell).trim();if(!s)return;
+          if(!tipo){const m=mapMenu(s);if(m){tipo=m;return;}}
+          if(!numero&&/^\d+$/.test(s)){numero=s;return;}
+          if(s.length>nombre.length)nombre=s;});
+        if(!nombre||SKIP.includes(nombre.toLowerCase()))return;
+        nuevos.push({...blank,id:uid(),nombre,tipo,notas:numero?`Nº ${numero}`:""});
+      });
+      if(nuevos.length){up({guests:[...data.guests,...nuevos]});setImp(nuevos.length);}else{setImp(0);}
+    }catch(err){setImp(-1);}
+    e.target.value="";
+  };
+  const plantilla=()=>{const ws=XLSX.utils.aoa_to_sheet([["Número","Nombre","Menú"],[1,"Marta López","adult"],[2,"Avi Carmen","cadet"],[3,"Leo","xiquet"]]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Invitados");XLSX.writeFile(wb,"plantilla-invitados.xlsx");};
   return(<div>
     <H sub={`${cnt.total} invitados · ${cnt.confirmado} confirmados · ${cnt.pendiente} pendientes`}>Invitados</H>
+    {hayTipos&&<div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+      <span style={{fontSize:12.5,fontWeight:700,color:"#fff",background:C.forest,borderRadius:999,padding:"4px 12px"}}>Adultos: {tc.Adulto}</span>
+      <span style={{fontSize:12.5,fontWeight:700,color:"#fff",background:C.sage,borderRadius:999,padding:"4px 12px"}}>Cadetes: {tc.Cadete}</span>
+      <span style={{fontSize:12.5,fontWeight:700,color:C.forest,background:C.sageSoft,borderRadius:999,padding:"4px 12px"}}>Infantiles: {tc.Infantil}</span>
+    </div>}
     <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
       <div style={{position:"relative",flex:1,minWidth:160}}><Search size={16} color={C.sub} style={{position:"absolute",left:11,top:11}}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar invitado…" style={{...IS,paddingLeft:34}}/></div>
+      <Btn kind="ghost" onClick={()=>fileRef.current&&fileRef.current.click()}><FileSpreadsheet size={16}/> Importar Excel</Btn>
       <Btn kind="ghost" onClick={()=>setBulk(v=>!v)}>Añadir varios</Btn>
       <Btn onClick={()=>setEd({...blank})}><Plus size={16}/> Añadir</Btn>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={importExcel} style={{display:"none"}}/>
     </div>
-    {bulk&&<Card style={{padding:12,marginBottom:12}}><div style={{fontSize:12.5,color:C.sub,marginBottom:8}}>Un nombre por línea.</div><textarea value={bt} onChange={e=>setBt(e.target.value)} rows={5} placeholder={"Marta López\nJuan Pérez"} style={{...IS,resize:"vertical"}}/><div style={{display:"flex",gap:8,marginTop:8}}><Btn onClick={addBulk}><Check size={16}/> Añadir</Btn><Btn kind="ghost" onClick={()=>setBulk(false)}>Cancelar</Btn></div></Card>}
+    {imp!=null&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:10,fontSize:13,fontWeight:600,background:imp>0?C.okBg:C.noBg,color:imp>0?C.ok:C.no}}>{imp>0?`✓ ${imp} invitados importados`:imp===0?"No se encontraron invitados en el archivo.":"No se pudo leer el archivo. Prueba a guardarlo como .xlsx o .csv."} <button onClick={()=>setImp(null)} style={{background:"none",border:"none",color:"inherit",cursor:"pointer",marginLeft:6,fontWeight:700}}>✕</button></div>}
+    {bulk&&<Card style={{padding:12,marginBottom:12}}><div style={{fontSize:12.5,color:C.sub,marginBottom:8}}>Un nombre por línea. O <button onClick={plantilla} style={{background:"none",border:"none",color:C.sage,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>descarga la plantilla de Excel</button> para importar con menú.</div><textarea value={bt} onChange={e=>setBt(e.target.value)} rows={5} placeholder={"Marta López\nJuan Pérez"} style={{...IS,resize:"vertical"}}/><div style={{display:"flex",gap:8,marginTop:8}}><Btn onClick={addBulk}><Check size={16}/> Añadir</Btn><Btn kind="ghost" onClick={()=>setBulk(false)}>Cancelar</Btn></div></Card>}
     <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>{[["todos","Todos",cnt.total],["confirmado","Confirmados",cnt.confirmado],["pendiente","Pendientes",cnt.pendiente],["rechazado","No asisten",cnt.rechazado]].map(([k,l,n])=>(<button key={k} onClick={()=>setF(k)} style={{border:`1px solid ${f===k?C.forest:C.line}`,background:f===k?C.forest:"transparent",color:f===k?"#fff":C.sub,borderRadius:999,padding:"6px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>{l} · {n}</button>))}</div>
-    {list.length===0?<Empty icon={Users} title="Aún no hay invitados" hint="Añade a vuestros invitados para llevar el control de confirmaciones, mesas y menús." action={<Btn onClick={()=>setEd({...blank})}><Plus size={16}/> Añadir el primero</Btn>}/>:(
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>{list.map(g=>{const est=ESTADOS.find(e=>e.v===g.estado);const mesa=data.tables.find(t=>t.id===g.mesa);return(<Card key={g.id} style={{padding:12,display:"flex",alignItems:"center",gap:10}}><div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:15}}>{g.nombre}</div><div style={{fontSize:12,color:C.sub,marginTop:2,display:"flex",gap:8,flexWrap:"wrap"}}><span>{g.lado} · {g.grupo}</span>{mesa&&<span>· {mesa.nombre}</span>}<span>· {g.comida}</span>{g.restriccion!=="Ninguna"&&<span style={{color:C.gold}}>· {g.restriccion}</span>}</div></div><button onClick={()=>cycle(g)} style={{border:"none",cursor:"pointer",background:est.bg,color:est.fg,fontWeight:700,fontSize:12,borderRadius:999,padding:"5px 10px",whiteSpace:"nowrap"}}>{est.label}</button><button onClick={()=>setEd(g)} style={{background:"none",border:"none",color:C.sub,cursor:"pointer"}}><Pencil size={16}/></button></Card>);})}</div>
+    {list.length===0?<Empty icon={Users} title="Aún no hay invitados" hint="Añade a vuestros invitados o importa tu Excel (columnas: Número, Nombre, Menú)." action={<Btn onClick={()=>setEd({...blank})}><Plus size={16}/> Añadir el primero</Btn>}/>:(
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{list.map(g=>{const est=ESTADOS.find(e=>e.v===g.estado);const mesa=data.tables.find(t=>t.id===g.mesa);return(<Card key={g.id} style={{padding:12,display:"flex",alignItems:"center",gap:10}}><div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:15}}>{g.nombre}</div><div style={{fontSize:12,color:C.sub,marginTop:2,display:"flex",gap:8,flexWrap:"wrap"}}>{g.tipo&&<span style={{color:C.forest,fontWeight:700}}>{g.tipo}</span>}<span>{g.lado} · {g.grupo}</span>{mesa&&<span>· {mesa.nombre}</span>}<span>· {g.comida}</span>{g.restriccion!=="Ninguna"&&<span style={{color:C.gold}}>· {g.restriccion}</span>}</div></div><button onClick={()=>cycle(g)} style={{border:"none",cursor:"pointer",background:est.bg,color:est.fg,fontWeight:700,fontSize:12,borderRadius:999,padding:"5px 10px",whiteSpace:"nowrap"}}>{est.label}</button><button onClick={()=>setEd(g)} style={{background:"none",border:"none",color:C.sub,cursor:"pointer"}}><Pencil size={16}/></button></Card>);})}</div>
     )}
     {ed&&<Modal title={ed.id?"Editar invitado":"Nuevo invitado"} onClose={()=>setEd(null)} footer={<div style={{display:"flex",gap:8}}><Btn onClick={()=>save(ed)} style={{flex:1,justifyContent:"center"}}><Check size={16}/> Guardar</Btn>{ed.id&&<Btn kind="danger" onClick={()=>{del(ed.id);setEd(null);}}><Trash2 size={16}/></Btn>}</div>}><GF g={ed} setG={setEd} tables={data.tables}/></Modal>}
   </div>);
@@ -322,10 +362,10 @@ function GF({g,setG,tables}){
   const f=(k,v)=>setG(s=>({...s,[k]:v}));
   return <div style={{display:"flex",flexDirection:"column",gap:12}}>
     <Field label="Nombre y apellidos"><TI value={g.nombre} onChange={e=>f("nombre",e.target.value)} placeholder="Ej.: Marta López" autoFocus/></Field>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field label="Tipo"><Sel value={g.tipo||""} onChange={e=>f("tipo",e.target.value)} options={[{v:"",label:"(sin tipo)"},...TIPOS]}/></Field><Field label="Mesa"><Sel value={g.mesa} onChange={e=>f("mesa",e.target.value)} options={[{v:"",label:"Sin asignar"},...tables.map(t=>({v:t.id,label:t.nombre}))]}/></Field></div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field label="Lado"><Sel value={g.lado} onChange={e=>f("lado",e.target.value)} options={LADOS}/></Field><Field label="Grupo"><Sel value={g.grupo} onChange={e=>f("grupo",e.target.value)} options={GRUPOS}/></Field></div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field label="Menú"><Sel value={g.comida} onChange={e=>f("comida",e.target.value)} options={COMIDAS}/></Field><Field label="Restricción"><Sel value={g.restriccion} onChange={e=>f("restriccion",e.target.value)} options={RESTR}/></Field></div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field label="Estado"><Sel value={g.estado} onChange={e=>f("estado",e.target.value)} options={ESTADOS}/></Field><Field label="Mesa"><Sel value={g.mesa} onChange={e=>f("mesa",e.target.value)} options={[{v:"",label:"Sin asignar"},...tables.map(t=>({v:t.id,label:t.nombre}))]}/></Field></div>
-    <Field label="Notas"><TI value={g.notas} onChange={e=>f("notas",e.target.value)} placeholder="Alergias, parentesco…"/></Field>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field label="Estado"><Sel value={g.estado} onChange={e=>f("estado",e.target.value)} options={ESTADOS}/></Field><Field label="Notas"><TI value={g.notas} onChange={e=>f("notas",e.target.value)} placeholder="Alergias…"/></Field></div>
   </div>;
 }
 
