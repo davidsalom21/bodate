@@ -5,12 +5,13 @@ import {
   Truck, Receipt, Clock, Music, Gift, MoreHorizontal, Phone, Mail,
   ChevronRight, Copy, LogOut, Link2
 } from "lucide-react";
-import { FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet, Circle, Square, Move } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import * as XLSX from "xlsx";
 import { supabase } from "./supabase.js";
 
 const TIPOS=["Adulto","Cadete","Infantil"];
+// Carga SheetJS desde CDN solo cuando se necesita (sin dependencia en package.json)
+function loadXLSX(){return new Promise((res,rej)=>{if(window.XLSX)return res(window.XLSX);const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";s.onload=()=>res(window.XLSX);s.onerror=()=>rej(new Error("cdn"));document.head.appendChild(s);});}
 
 const C={paper:"#F3F0E7",surface:"#FFFFFF",ink:"#2A2D24",sub:"#6C7060",sage:"#7E8A66",sageSoft:"#E7EADD",forest:"#3B4733",line:"#E4DFD2",gold:"#B08D57",blush:"#C2998F",ok:"#5F7E47",okBg:"#E6EEDB",no:"#B0644D",noBg:"#F3E1DA",pend:"#A98C4B",pendBg:"#F2EAD3"};
 const DISPLAY="'Cormorant Garamond',Georgia,'Times New Roman',serif";
@@ -316,6 +317,7 @@ function Invitados({data,up}){
   const importExcel=async(e)=>{
     const file=e.target.files&&e.target.files[0];if(!file){return;}
     try{
+      const XLSX=await loadXLSX();
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:"array"});
       const ws=wb.Sheets[wb.SheetNames[0]];
@@ -334,7 +336,7 @@ function Invitados({data,up}){
     }catch(err){setImp(-1);}
     e.target.value="";
   };
-  const plantilla=()=>{const ws=XLSX.utils.aoa_to_sheet([["Número","Nombre","Menú"],[1,"Marta López","adult"],[2,"Avi Carmen","cadet"],[3,"Leo","xiquet"]]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Invitados");XLSX.writeFile(wb,"plantilla-invitados.xlsx");};
+  const plantilla=async()=>{const XLSX=await loadXLSX();const ws=XLSX.utils.aoa_to_sheet([["Número","Nombre","Menú"],[1,"Marta López","adult"],[2,"Avi Carmen","cadet"],[3,"Leo","xiquet"]]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Invitados");XLSX.writeFile(wb,"plantilla-invitados.xlsx");};
   return(<div>
     <H sub={`${cnt.total} invitados · ${cnt.confirmado} confirmados · ${cnt.pendiente} pendientes`}>Invitados</H>
     {hayTipos&&<div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
@@ -371,22 +373,127 @@ function GF({g,setG,tables}){
 
 // Mesas
 function Mesas({data,up}){
+  const [vista,setVista]=useState("lista");
   const add=()=>up({tables:[...data.tables,{id:uid(),nombre:`Mesa ${data.tables.length+1}`,capacidad:10}]});
   const del=(id)=>up({tables:data.tables.filter(t=>t.id!==id),guests:data.guests.map(g=>g.mesa===id?{...g,mesa:""}:g)});
   const set=(id,f,v)=>up({tables:data.tables.map(t=>t.id===id?{...t,[f]:v}:t)});
   const asgn=(gid,tid)=>up({guests:data.guests.map(g=>g.id===gid?{...g,mesa:tid}:g)});
   const sin=data.guests.filter(g=>!g.mesa);
   return(<div>
-    <H sub="Crea mesas y reparte a los invitados.">Mesas</H>
-    {sin.length>0&&<Card style={{padding:14,marginBottom:14,background:C.pendBg}}><div style={{fontWeight:700,fontSize:13.5,marginBottom:8}}>Sin mesa asignada ({sin.length})</div><div style={{display:"flex",flexDirection:"column",gap:6}}>{sin.map(g=>(<div key={g.id} style={{display:"flex",alignItems:"center",gap:8}}><span style={{flex:1,fontSize:13.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span><Sel value="" onChange={e=>asgn(g.id,e.target.value)} style={{width:150,padding:"6px 8px",fontSize:13}} options={[{v:"",label:"Asignar a…"},...data.tables.map(t=>({v:t.id,label:t.nombre}))]}/></div>))}</div></Card>}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
-      {data.tables.map(t=>{const occ=data.guests.filter(g=>g.mesa===t.id);const full=occ.length>=num(t.capacidad);return(<Card key={t.id} style={{padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><input value={t.nombre} onChange={e=>set(t.id,"nombre",e.target.value)} style={{...IS,background:"transparent",border:"none",fontFamily:DISPLAY,fontSize:19,fontWeight:700,padding:0,width:"60%"}}/><button onClick={()=>del(t.id)} style={{background:"none",border:"none",color:C.sub,cursor:"pointer"}}><Trash2 size={15}/></button></div>
-        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}><span style={{fontSize:12.5,color:full?C.no:C.sage,fontWeight:700}}>{occ.length}</span><span style={{fontSize:12.5,color:C.sub}}>/</span><input type="number" value={t.capacidad} onChange={e=>set(t.id,"capacidad",num(e.target.value))} style={{...IS,width:48,padding:"3px 6px",fontSize:12.5}}/><span style={{fontSize:12.5,color:C.sub}}>asientos</span></div>
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>{occ.length===0&&<span style={{fontSize:12.5,color:C.sub,fontStyle:"italic"}}>Vacía</span>}{occ.map(g=>(<div key={g.id} style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><span style={{width:5,height:5,borderRadius:99,background:C.sage}}/><span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span><button onClick={()=>asgn(g.id,"")} style={{background:"none",border:"none",color:C.sub,cursor:"pointer"}}><X size={13}/></button></div>))}</div>
-      </Card>);})}
+    <H sub="Crea mesas y reparte a los invitados." action={
+      <div style={{display:"flex",background:C.sageSoft,borderRadius:999,padding:3}}>
+        {[["lista","Lista"],["plano","Plano"]].map(([k,l])=>(<button key={k} onClick={()=>setVista(k)} style={{border:"none",cursor:"pointer",borderRadius:999,padding:"7px 16px",fontSize:13.5,fontWeight:700,background:vista===k?C.forest:"transparent",color:vista===k?"#fff":C.forest}}>{l}</button>))}
+      </div>}>Mesas</H>
+    {vista==="plano"?<Plano data={data} up={up}/>:(<>
+      {sin.length>0&&<Card style={{padding:14,marginBottom:14,background:C.pendBg}}><div style={{fontWeight:700,fontSize:13.5,marginBottom:8}}>Sin mesa asignada ({sin.length})</div><div style={{display:"flex",flexDirection:"column",gap:6}}>{sin.map(g=>(<div key={g.id} style={{display:"flex",alignItems:"center",gap:8}}><span style={{flex:1,fontSize:13.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span><Sel value="" onChange={e=>asgn(g.id,e.target.value)} style={{width:150,padding:"6px 8px",fontSize:13}} options={[{v:"",label:"Asignar a…"},...data.tables.map(t=>({v:t.id,label:t.nombre}))]}/></div>))}</div></Card>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
+        {data.tables.map(t=>{const occ=data.guests.filter(g=>g.mesa===t.id);const full=occ.length>=num(t.capacidad);return(<Card key={t.id} style={{padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><input value={t.nombre} onChange={e=>set(t.id,"nombre",e.target.value)} style={{...IS,background:"transparent",border:"none",fontFamily:DISPLAY,fontSize:19,fontWeight:700,padding:0,width:"60%"}}/><button onClick={()=>del(t.id)} style={{background:"none",border:"none",color:C.sub,cursor:"pointer"}}><Trash2 size={15}/></button></div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}><span style={{fontSize:12.5,color:full?C.no:C.sage,fontWeight:700}}>{occ.length}</span><span style={{fontSize:12.5,color:C.sub}}>/</span><input type="number" value={t.capacidad} onChange={e=>set(t.id,"capacidad",num(e.target.value))} style={{...IS,width:48,padding:"3px 6px",fontSize:12.5}}/><span style={{fontSize:12.5,color:C.sub}}>asientos</span></div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>{occ.length===0&&<span style={{fontSize:12.5,color:C.sub,fontStyle:"italic"}}>Vacía</span>}{occ.map(g=>(<div key={g.id} style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><span style={{width:5,height:5,borderRadius:99,background:C.sage}}/><span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span><button onClick={()=>asgn(g.id,"")} style={{background:"none",border:"none",color:C.sub,cursor:"pointer"}}><X size={13}/></button></div>))}</div>
+        </Card>);})}
+      </div>
+      <Btn kind="soft" onClick={add} style={{marginTop:12}}><Plus size={16}/> Añadir mesa</Btn>
+    </>)}
+  </div>);
+}
+
+// Iniciales para los asientos
+function ini(n){const p=String(n||"").trim().split(/\s+/);return((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase();}
+// Geometría de mesa redonda/rectangular
+function layout(forma,cap){
+  const c=Math.max(1,num(cap));
+  if(forma==="rect"){
+    const top=Math.ceil(c/2),bot=c-top,sp=32,cols=Math.max(top,bot,1);
+    const W=cols*sp+16,H=128,tableX=8,tableY=34,tableW=W-16,tableH=60;
+    const seats=[];
+    for(let i=0;i<top;i++){const x=(W-top*sp)/2+i*sp+sp/2;seats.push({x:x-13,y:4});}
+    for(let i=0;i<bot;i++){const x=(W-bot*sp)/2+i*sp+sp/2;seats.push({x:x-13,y:H-30});}
+    return{W,H,table:{x:tableX,y:tableY,w:tableW,h:tableH,r:16},seats};
+  }
+  const S=150+Math.max(0,c-8)*8,d=Math.round(S*0.5),rr=S/2-15;
+  const seats=[];
+  for(let i=0;i<c;i++){const a=(i/c)*2*Math.PI-Math.PI/2;seats.push({x:S/2+rr*Math.cos(a)-13,y:S/2+rr*Math.sin(a)-13});}
+  return{W:S,H:S,table:{x:(S-d)/2,y:(S-d)/2,w:d,h:d,r:999},seats};
+}
+
+function Plano({data,up}){
+  const [drag,setDrag]=useState(null);
+  const [editing,setEditing]=useState(null);
+  const [pick,setPick]=useState(null);
+  const [info,setInfo]=useState(null);
+  const [pq,setPq]=useState("");
+  const dragRef=useRef(null);
+  const sin=data.guests.filter(g=>!g.mesa);
+  const addT=(forma)=>{const i=data.tables.length;up({tables:[...data.tables,{id:uid(),nombre:`Mesa ${i+1}`,capacidad:8,forma,x:20+(i%4)*180,y:20+Math.floor(i/4)*210}]});};
+  const setT=(id,patch)=>up({tables:data.tables.map(t=>t.id===id?{...t,...patch}:t)});
+  const delT=(id)=>{up({tables:data.tables.filter(t=>t.id!==id),guests:data.guests.map(g=>g.mesa===id?{...g,mesa:""}:g)});setEditing(null);};
+  const asgn=(gid,tid)=>up({guests:data.guests.map(g=>g.id===gid?{...g,mesa:tid}:g)});
+  const posOf=(t,i)=>({x:t.x!=null?t.x:20+(i%4)*180,y:t.y!=null?t.y:20+Math.floor(i/4)*210});
+  const onDown=(e,t,px,py)=>{e.currentTarget.setPointerCapture(e.pointerId);dragRef.current={id:t.id,sx:e.clientX,sy:e.clientY,ox:px,oy:py,moved:false};setDrag({id:t.id,x:px,y:py});};
+  const onMove=(e)=>{const d=dragRef.current;if(!d)return;const dx=e.clientX-d.sx,dy=e.clientY-d.sy;if(Math.abs(dx)+Math.abs(dy)>5)d.moved=true;setDrag({id:d.id,x:Math.max(0,d.ox+dx),y:Math.max(0,d.oy+dy)});};
+  const onUp=(e,t)=>{const d=dragRef.current;if(!d){return;}if(d.moved){const nx=Math.max(0,d.ox+(e.clientX-d.sx)),ny=Math.max(0,d.oy+(e.clientY-d.sy));setT(t.id,{x:nx,y:ny});}else{setEditing(t);}dragRef.current=null;setDrag(null);};
+  const pickList=sin.filter(g=>g.nombre.toLowerCase().includes(pq.toLowerCase()));
+  return(<div>
+    <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      <Btn kind="soft" onClick={()=>addT("redonda")}><Circle size={16}/> Mesa redonda</Btn>
+      <Btn kind="soft" onClick={()=>addT("rect")}><Square size={16}/> Mesa rectangular</Btn>
+      <span style={{fontSize:12,color:C.sub,display:"flex",alignItems:"center",gap:4}}><Move size={13}/> arrastra para mover · toca un asiento para sentar</span>
     </div>
-    <Btn kind="soft" onClick={add} style={{marginTop:12}}><Plus size={16}/> Añadir mesa</Btn>
+    {sin.length>0&&<div style={{fontSize:12.5,color:C.gold,fontWeight:600,marginBottom:8}}>{sin.length} invitados sin sentar</div>}
+    <div style={{position:"relative",width:"100%",height:"68vh",overflow:"auto",background:"#FBFAF6",border:`1px solid ${C.line}`,borderRadius:16,backgroundImage:"radial-gradient(#E4DFD2 1px, transparent 1px)",backgroundSize:"22px 22px",WebkitOverflowScrolling:"touch"}}>
+      <div style={{position:"relative",width:1400,height:1200}}>
+        {data.tables.map((t,i)=>{
+          const occ=data.guests.filter(g=>g.mesa===t.id);
+          const cap=Math.max(num(t.capacidad),occ.length);
+          const L=layout(t.forma,cap);
+          const p=drag&&drag.id===t.id?{x:drag.x,y:drag.y}:posOf(t,i);
+          const full=occ.length>num(t.capacidad);
+          return(<div key={t.id} onPointerDown={e=>onDown(e,t,p.x,p.y)} onPointerMove={onMove} onPointerUp={e=>onUp(e,t)}
+            style={{position:"absolute",left:p.x,top:p.y,width:L.W,height:L.H,touchAction:"none",cursor:"grab",userSelect:"none"}}>
+            <div style={{position:"absolute",left:L.table.x,top:L.table.y,width:L.table.w,height:L.table.h,borderRadius:L.table.r,background:"#fff",border:`2px solid ${full?C.no:C.sage}`,boxShadow:"0 2px 6px rgba(0,0,0,.06)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1}}>
+              <div style={{fontFamily:DISPLAY,fontWeight:700,fontSize:14,color:C.forest,textAlign:"center",lineHeight:1,padding:"0 4px",maxWidth:L.table.w-6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.nombre}</div>
+              <div style={{fontSize:10,color:full?C.no:C.sub,fontWeight:600}}>{occ.length}/{num(t.capacidad)}</div>
+            </div>
+            {L.seats.map((s,si)=>{const g=occ[si];return(<div key={si} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();g?setInfo({t,g}):(setPq(""),setPick(t));}}
+              title={g?g.nombre:"Asiento libre"}
+              style={{position:"absolute",left:s.x,top:s.y,width:26,height:26,borderRadius:999,background:g?C.forest:"#fff",border:`2px solid ${g?C.forest:C.line}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:9,fontWeight:700,color:"#fff",zIndex:2}}>
+              {g?ini(g.nombre):<Plus size={12} color={C.sub}/>}</div>);})}
+          </div>);
+        })}
+        {data.tables.length===0&&<div style={{position:"absolute",left:0,right:0,top:120,textAlign:"center",color:C.sub,fontSize:14}}>Añade tu primera mesa con los botones de arriba.</div>}
+      </div>
+    </div>
+
+    {/* Sentar invitado */}
+    {pick&&<Modal title={`Sentar en ${pick.nombre}`} onClose={()=>setPick(null)}>
+      {sin.length===0?<div style={{fontSize:14,color:C.sub,textAlign:"center",padding:"10px 0"}}>Todos los invitados ya están sentados. 🎉</div>:(<div>
+        <div style={{position:"relative",marginBottom:10}}><Search size={16} color={C.sub} style={{position:"absolute",left:11,top:11}}/><input value={pq} onChange={e=>setPq(e.target.value)} placeholder="Buscar…" style={{...IS,paddingLeft:34}} autoFocus/></div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:"50vh",overflowY:"auto"}}>
+          {pickList.map(g=>(<button key={g.id} onClick={()=>{asgn(g.id,pick.id);setPick(null);}} style={{textAlign:"left",border:`1px solid ${C.line}`,background:"#fff",borderRadius:10,padding:"10px 12px",cursor:"pointer",fontSize:14,fontWeight:600,color:C.ink,display:"flex",alignItems:"center",gap:8}}><span style={{width:26,height:26,borderRadius:999,background:C.sageSoft,color:C.forest,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,flexShrink:0}}>{ini(g.nombre)}</span><span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span>{g.tipo&&<span style={{fontSize:11,color:C.sub}}>{g.tipo}</span>}</button>))}
+          {pickList.length===0&&<div style={{fontSize:13,color:C.sub,textAlign:"center",padding:"8px 0"}}>Nadie coincide con la búsqueda.</div>}
+        </div>
+      </div>)}
+    </Modal>}
+
+    {/* Info de asiento ocupado */}
+    {info&&<Modal title={info.g.nombre} onClose={()=>setInfo(null)} footer={
+      <div style={{display:"flex",gap:8}}><Btn kind="danger" onClick={()=>{asgn(info.g.id,"");setInfo(null);}} style={{flex:1,justifyContent:"center"}}><X size={16}/> Levantar de la mesa</Btn></div>}>
+      <div style={{fontSize:14,color:C.sub}}>Sentado en <b style={{color:C.ink}}>{info.t.nombre}</b>{info.g.tipo?` · ${info.g.tipo}`:""}.</div>
+    </Modal>}
+
+    {/* Editar mesa */}
+    {editing&&<Modal title="Mesa" onClose={()=>setEditing(null)} footer={
+      <div style={{display:"flex",gap:8}}><Btn onClick={()=>setEditing(null)} style={{flex:1,justifyContent:"center"}}><Check size={16}/> Hecho</Btn><Btn kind="danger" onClick={()=>delT(editing.id)}><Trash2 size={16}/></Btn></div>}>
+      {(()=>{const t=data.tables.find(x=>x.id===editing.id)||editing;return(<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <Field label="Nombre de la mesa"><TI value={t.nombre} onChange={e=>setT(t.id,{nombre:e.target.value})} autoFocus/></Field>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Field label="Asientos"><TI type="number" value={t.capacidad} onChange={e=>setT(t.id,{capacidad:num(e.target.value)})}/></Field>
+          <Field label="Forma"><Sel value={t.forma==="rect"?"rect":"redonda"} onChange={e=>setT(t.id,{forma:e.target.value})} options={[{v:"redonda",label:"Redonda"},{v:"rect",label:"Rectangular"}]}/></Field>
+        </div>
+        <div style={{fontSize:12.5,color:C.sub}}>Sentados: {data.guests.filter(g=>g.mesa===t.id).length} de {num(t.capacidad)}</div>
+      </div>);})()}
+    </Modal>}
   </div>);
 }
 
